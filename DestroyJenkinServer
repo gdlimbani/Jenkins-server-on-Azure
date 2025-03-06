@@ -1,0 +1,38 @@
+pipeline {
+    agent any
+
+    environment {
+        ARM_SUBSCRIPTION_ID = credentials('azure-subscription-id')
+        ARM_CLIENT_ID       = credentials('azure-client-id')
+        ARM_CLIENT_SECRET   = credentials('azure-client-secret')
+        ARM_TENANT_ID       = credentials('azure-tenant-id')
+    }
+
+    stages {
+        
+        stage('Terraform Destroy') {
+            steps {
+                script {
+                    bat '''
+                    terraform init
+                    terraform destroy -auto-approve
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()  // Clean the workspace no matter what
+        }
+
+        success {
+            echo 'Destroy Successful!'
+        }
+
+        failure {
+            echo 'Destroy Failed!'
+        }
+    }
+}
