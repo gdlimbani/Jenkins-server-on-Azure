@@ -45,6 +45,7 @@ variable "admin_username" {
 }
 
 variable "admin_password" {
+  default = "123abc!@#ABC"
   sensitive = true
   type = string
 }

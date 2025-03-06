@@ -9,15 +9,15 @@ provider "azurerm" {
 # Create a Virtual Network
 resource "azurerm_virtual_network" "vnet" {
   name                = "${var.virtual_network_name}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = "${var.resource_group_name}"
   address_space       = ["10.0.0.0/16"]
 }
 
 # Create a Subnet
 resource "azurerm_subnet" "subnet" {
   name                 = "${var.subnet_name}"
-  resource_group_name  = azurerm_resource_group.rg.name
+  resource_group_name  = "${var.resource_group_name}"
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.1.0/24"]
 }
@@ -25,8 +25,8 @@ resource "azurerm_subnet" "subnet" {
 # Create a Network Security Group (NSG)
 resource "azurerm_network_security_group" "nsg" {
   name                = "${var.network_security_group_name}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = "${var.resource_group_name}"
 
   security_rule {
     name                       = "AllowSSH"
@@ -86,8 +86,8 @@ resource "azurerm_subnet_network_security_group_association" "nsg_association" {
 # Create Public IP for VM
 resource "azurerm_public_ip" "public_ip" {
   name                         = "${var.public_ip_name}"
-  resource_group_name          = azurerm_resource_group.rg.name
-  location                     = azurerm_resource_group.rg.location
+  resource_group_name          = "${var.resource_group_name}"
+  location                     = data.azurerm_resource_group.rg.location
   allocation_method            = "Dynamic"
   sku                          = "Basic"
 }
@@ -95,8 +95,8 @@ resource "azurerm_public_ip" "public_ip" {
 # Create Network Interface
 resource "azurerm_network_interface" "nic" {
   name                         = "${var.network_interface_name}"
-  location                     = azurerm_resource_group.rg.location
-  resource_group_name          = azurerm_resource_group.rg.name  
+  location                     = data.azurerm_resource_group.rg.location
+  resource_group_name          = "${var.resource_group_name}"  
   ip_configuration {
     name                          = "internal"
     subnet_id                     = azurerm_subnet.subnet.id
@@ -108,24 +108,22 @@ resource "azurerm_network_interface" "nic" {
 # Create the Virtual Machine
 resource "azurerm_linux_virtual_machine" "jenkins_vm" {
   name                         = var.vm_name
-  resource_group_name          = azurerm_resource_group.rg.name
-  location                     = azurerm_resource_group.rg.location
+  resource_group_name          = "${var.resource_group_name}"
+  location                     = data.azurerm_resource_group.rg.location
   size                         = "Standard_B1ms"
   admin_username               = var.admin_username
   admin_password               = var.admin_password
   network_interface_ids        = [azurerm_network_interface.nic.id]
-#   storage_os_disk {
-#     name              = "jenkins-os-disk"
-#     caching           = "ReadWrite"
-#     create_option     = "FromImage"
-#     managed           = true
-#     disk_size_gb      = 20
-#   }
+  
+  admin_ssh_key {
+    username   = var.admin_username
+    public_key = file("./id_rsa.pub")
+  }
 
   os_disk {
     name              = "gdl-jenkins-os-disk"
     caching           = "ReadWrite"
-    disk_size_gb      = 20
+    disk_size_gb      = 30
     storage_account_type    = "Standard_LRS"   # Specify storage type, for example, Standard_LRS
   }
 
@@ -151,37 +149,13 @@ output "jenkins_vm_public_ip" {
 resource "azurerm_virtual_machine_extension" "install_jenkins" {
   name                 = "install-jenkins"
   virtual_machine_id   = azurerm_linux_virtual_machine.jenkins_vm.id
-  publisher             = "Canonical"
-  type                  = "CustomScript"
-  type_handler_version = "1.10"
+  publisher            = "Microsoft.Azure.Extensions"
+  type                 = "CustomScript"
+  type_handler_version = "2.0"
 
   settings = <<SETTINGS
-  #!/bin/bash
-  sudo yum update
-    sudo wget -O /etc/yum.repos.d/jenkins.repo \
-        https://pkg.jenkins.io/redhat-stable/jenkins.repo
-    sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-    sudo yum upgrade -y
-    sudo amazon-linux-extras install java-17-amazon-corretto-devel -y
-    sudo yum install jenkins -y
-    sudo systemctl enable jenkins
-    sudo systemctl start jenkins
-    sudo ufw allow 8080
-    sudo ufw reload
-
-    # install git
-    sudo yum install git -y
-
-    # install terraform
-
-    sudo yum install -y yum-utils
-    sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
-    sudo yum -y install terraform
-
-    # install kubectl
-
-    sudo curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.23.6/bin/linux/amd64/kubectl
-    sudo chmod +x ./kubectl
-    sudo mkdir -p $HOME/bin && sudo cp ./kubectl $HOME/bin/kubectl && export PATH=$PATH:$HOME/bin
-SETTINGS
+    {
+        "commandToExecute": "bash -c 'sudo apt update && sudo apt install -y openjdk-11-jdk && wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add - && sudo sh -c \\\"echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list\\\" && sudo apt update && sudo apt install -y jenkins && sudo systemctl start jenkins && sudo systemctl enable jenkins'"
+    }
+  SETTINGS
 }
