@@ -114,11 +114,24 @@ resource "azurerm_linux_virtual_machine" "jenkins_vm" {
   admin_username               = var.admin_username
   admin_password               = var.admin_password
   network_interface_ids        = [azurerm_network_interface.nic.id]
-  
-  admin_ssh_key {
-    username   = var.admin_username
-    public_key = file("./id_rsa.pub")
-  }
+
+  # Optionally, disable SSH key authentication
+  disable_password_authentication = false
+
+  //custom_data = filebase64("./jenkins-script.sh")
+  custom_data = base64encode(<<EOF
+#!/bin/bash
+sudo apt update
+sudo apt install -y openjdk-11-jre-headless
+wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -
+sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 5BA31D57EF5975CA
+sudo apt update
+sudo apt install -y jenkins=2.249.3
+sudo systemctl start jenkins
+sudo systemctl enable jenkins
+EOF
+  )
 
   os_disk {
     name              = "gdl-jenkins-os-disk"
@@ -146,16 +159,16 @@ output "jenkins_vm_public_ip" {
 }
 
 # Script to install Jenkins on the VM
-resource "azurerm_virtual_machine_extension" "install_jenkins" {
-  name                 = "install-jenkins"
-  virtual_machine_id   = azurerm_linux_virtual_machine.jenkins_vm.id
-  publisher            = "Microsoft.Azure.Extensions"
-  type                 = "CustomScript"
-  type_handler_version = "2.0"
+# resource "azurerm_virtual_machine_extension" "install_jenkins" {
+#   name                 = "install-jenkins"
+#   virtual_machine_id   = azurerm_linux_virtual_machine.jenkins_vm.id
+#   publisher            = "Microsoft.Azure.Extensions"
+#   type                 = "CustomScript"
+#   type_handler_version = "2.0"
 
-  settings = <<SETTINGS
-    {
-        "commandToExecute": "bash -c 'sudo apt update && sudo apt install -y openjdk-11-jdk && wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add - && sudo sh -c \\\"echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list\\\" && sudo apt update && sudo apt install -y jenkins && sudo systemctl start jenkins && sudo systemctl enable jenkins'"
-    }
-  SETTINGS
-}
+#   settings = <<SETTINGS
+#     {
+#         "commandToExecute": "bash -c 'sudo apt update && sudo apt install -y openjdk-11-jdk && wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add - && sudo sh -c \\\"echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list\\\" && sudo apt update && sudo apt install -y jenkins && sudo systemctl start jenkins && sudo systemctl enable jenkins'"
+#     }
+#   SETTINGS
+# }
